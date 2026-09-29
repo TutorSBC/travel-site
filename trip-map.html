@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>越南-澳大利亚行程地图 9.30-10.7</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; display:flex; height:100vh; }
+  #sidebar { width:340px; overflow-y:auto; background:#fafafa; border-right:1px solid #ddd; padding:16px; }
+  #sidebar h1 { font-size:18px; margin-bottom:4px; }
+  #sidebar .sub { font-size:12px; color:#888; margin-bottom:12px; }
+  .day-block { margin-bottom:18px; }
+  .day-title { font-size:14px; font-weight:700; padding:6px 10px; border-radius:6px; color:#fff; cursor:pointer; margin-bottom:6px; }
+  .day-item { font-size:12px; padding:5px 8px 5px 28px; border-left:3px solid transparent; cursor:pointer; line-height:1.5; }
+  .day-item:hover { background:#eef; border-left-color:#666; }
+  .day-item .t { color:#666; font-family:monospace; }
+  #map { flex:1; }
+  .legend { background:#fff; padding:10px 14px; border-radius:6px; box-shadow:0 1px 5px rgba(0,0,0,.3); font-size:12px; }
+  .legend .row { display:flex; align-items:center; gap:6px; margin:3px 0; }
+  .legend .dot { width:12px; height:12px; border-radius:50%; }
+  .leaflet-popup-content { font-size:13px; line-height:1.6; min-width:180px; }
+  .leaflet-popup-content b { font-size:14px; }
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <h1>🇻🇳🇦🇺 越澳行程地图</h1>
+  <div class="sub">9.30 - 10.7｜点击条目或标记定位</div>
+  <div id="day-list"></div>
+</div>
+<div id="map"></div>
+<div class="legend" id="legend"></div>
+<script>
+// ===== 城市颜色 =====
+const CITY = {
+  hcmc:  { name:'胡志明市', color:'#e91e63', zoom:[10.7700,106.6950], zoomLevel:14 },
+  sydney:{ name:'悉尼',   color:'#1565c0', zoom:[-33.8680,151.2100], zoomLevel:13 },
+  melb:  { name:'墨尔本', color:'#2e7d32', zoom:[-37.8130,144.9630], zoomLevel:14 },
+  transit:{name:'中转点', color:'#ef6c00', zoom:null },
+};
+
+// ===== 全部行程点（按天、按时间顺序）=====
+const PLAN = [
+{ city:'transit', day:'D1 · 9.30（周二）', color:'#757575', title:'上海虹桥机场 T2', time:'09:00', pos:[31.1979,121.3363], note:'✈️ 虹桥 → 重庆江北 T3（09:00-11:50）' },
+{ city:'transit', day:'D1 · 9.30（周二）', color:'#757575', title:'重庆江北机场 T3', time:'11:50', pos:[29.7192,106.6417], note:'寄存行李：T3 出发层 3H 值机岛北侧（箱10元/件）；18:40 ✈️ 飞胡志明' },
+{ city:'transit', day:'D1 · 9.30（周二）', color:'#757575', title:'观音桥', time:'12:20', pos:[29.5817,106.5309], note:'🍜 与王琼慧吃饭 + 闲逛；15:30 必须返程' },
+{ city:'hcmc', day:'D1 · 9.30（周二）', title:'新山一国际机场 (SGN)', time:'21:20', pos:[10.8188,106.6519], note:'🛬 落地 → Grab 打车去酒店' },
+{ city:'hcmc', day:'D1 · 9.30（周二）', title:'Triple E Hotel', time:'22:30', pos:[10.7740,106.7035], note:'81 Nguyen Thai Binh, District 1｜Grab 30-40万盾' },
+{ city:'hcmc', day:'D1 · 9.30（周二）', title:'范五老街 Bui Vien', time:'23:30', pos:[10.7695,106.6962], note:'🌃 大排档夜宵 + 夜生活（酒店步行10分钟）' },
+
+{ city:'hcmc', day:'D2 · 10.1（周三）', title:'胡志明市美术馆', time:'09:30', pos:[10.7749,106.7040], note:'法式老建筑，外观免费（酒店步行3分钟）' },
+{ city:'hcmc', day:'D2 · 10.1（周三）', title:'滨城市场 Ben Thanh', time:'10:00', pos:[10.7725,106.6980], note:'零食、伴手礼、越南小吃' },
+{ city:'hcmc', day:'D2 · 10.1（周三）', title:'红教堂（圣母大教堂）', time:'10:30', pos:[10.7797,106.6987], note:'西贡地标红砖法式教堂，免费拍照' },
+{ city:'hcmc', day:'D2 · 10.1（周三）', title:'西贡中央邮局', time:'10:40', pos:[10.7802,106.6983], note:'埃菲尔设计，寄明信片 3万盾/张' },
+{ city:'hcmc', day:'D2 · 10.1（周三）', title:'NHAM Cafe（第十郡）', time:'13:20', pos:[10.7587,106.6605], note:'91/1 Hoà Hưng, Q10｜Grab 20分钟 7-10万盾｜人均 6-13万盾' },
+{ city:'hcmc', day:'D2 · 10.1（周三）', title:'越式 SPA 按摩店', time:'14:00', pos:[10.7730,106.7000], note:'💆 草本洗头+面部+肩颈 35-60万盾（酒店附近优先）' },
+{ city:'hcmc', day:'D2 · 10.1（周三）', title:'新山一机场 · 出境', time:'16:00', pos:[10.8188,106.6519], note:'⚠️ 晚高峰预留40分钟｜19:55 ✈️ 飞悉尼' },
+
+{ city:'sydney', day:'D3 · 10.2（周四）', title:'悉尼机场 T2/T3', time:'07:20', pos:[-33.9399,151.1753], note:'🛬 火车 → Town Hall（30分钟，机场进站费 $17.92）' },
+{ city:'sydney', day:'D3 · 10.2（周四）', title:'YEHS Hotel（Town Hall 旁）', time:'09:50', pos:[-33.8757,151.2065], note:'🏨 寄存行李；15:00 后正式入住' },
+{ city:'sydney', day:'D3 · 10.2（周四）', title:'QVB 维多利亚女王大厦', time:'10:30', pos:[-33.8717,151.2067], note:'负一层美食广场午餐；休整' },
+{ city:'sydney', day:'D3 · 10.2（周四）', title:'新南威尔士美术馆', time:'12:30', pos:[-33.8688,151.2172], note:'🎨 途经海德公园、圣玛丽大教堂；梵高、莫奈原作，免费' },
+{ city:'sydney', day:'D3 · 10.2（周四）', title:'Circular Quay 网红车站', time:'15:00', pos:[-33.8600,151.2110], note:'2号站台拍歌剧院+海港大桥' },
+{ city:'sydney', day:'D3 · 10.2（周四）', title:'悉尼歌剧院', time:'15:30', pos:[-33.8568,151.2153], note:'🎭 外观免费；内部导览 $48' },
+{ city:'sydney', day:'D3 · 10.2（周四）', title:'麦考利夫人座椅（植物园）', time:'16:15', pos:[-33.8583,151.2220], note:'皇家植物园内，拍歌剧院+大桥经典机位' },
+{ city:'sydney', day:'D3 · 10.2（周四）', title:'悉尼天文台', time:'17:25', pos:[-33.8596,151.2035], note:'🔭 看日落夜景；户外观景台免费' },
+{ city:'sydney', day:'D3 · 10.2（周四）', title:'Town Hall 站 · 返酒店', time:'17:40', pos:[-33.8739,151.2065], note:'火车1站回，取行李入住、晚餐' },
+
+{ city:'sydney', day:'D4 · 10.3（周五）', title:'悉尼大学', time:'09:00', pos:[-33.8886,151.1873], note:'🎓 哈利波特风格老四合院 Quadrangle' },
+{ city:'sydney', day:'D4 · 10.3（周五）', title:'悉尼鱼市场', time:'10:30', pos:[-33.8696,151.1950], note:'🐟 海鲜午餐可选' },
+{ city:'sydney', day:'D4 · 10.3（周五）', title:'Bondi Junction Westfield', time:'12:00', pos:[-33.8915,151.2499], note:'🛍️ 购物中心店铺全，顺路逛（火车/公交可达）' },
+{ city:'sydney', day:'D4 · 10.3（周五）', title:'North Bondi SLSC（徒步起点）', time:'12:30', pos:[-33.8899,151.2760], note:'Ramsgate Ave, Bondi Beach｜午餐 Fish & Chips / Porch & Parlour' },
+{ city:'sydney', day:'D4 · 10.3（周五）', title:'Bondi Icebergs（南端）', time:'13:40', pos:[-33.8946,151.2743], note:'Bondi Pavilion → 1 Notts Ave 泳池地标' },
+{ city:'sydney', day:'D4 · 10.3（周五）', title:'Ben Buckler Point', time:'14:10', pos:[-33.8870,151.2810], note:'北端折返点，海岸步道向北' },
+{ city:'sydney', day:'D4 · 10.3（周五）', title:'Diamond Bay Reserve', time:'14:50', pos:[-33.8643,151.2870], note:'💎 悬崖木栈道网红拍照点｜⚠️ 风大勿翻护栏' },
+{ city:'sydney', day:'D4 · 10.3（周五）', title:'Waverley Cemetery', time:'15:10', pos:[-33.8617,151.2820], note:'1877年最美海边墓地，可短暂入园' },
+{ city:'sydney', day:'D4 · 10.3（周五）', title:'Macquarie Lighthouse', time:'15:35', pos:[-33.8510,151.2960], note:'1818年澳洲最古老灯塔' },
+{ city:'sydney', day:'D4 · 10.3（周五）', title:'The Gap → Watsons Bay（终点）', time:'16:30', pos:[-33.8410,151.2790], note:'🥾 徒步完成！公交324/380回市区40-50分钟，或打车25-30分钟' },
+{ city:'sydney', day:'D4 · 10.3（周五）', title:'Chinatown 晚餐', time:'17:30', pos:[-33.8790,151.2040], note:'Mama\'s Chinese / Chat Thai / Mamak，简单吃' },
+{ city:'sydney', day:'D4 · 10.3（周五）', title:'ibis budget sydney airport', time:'20:00', pos:[-33.9290,151.1860], note:'🏨 5 Ross Smith Ave, Mascot｜T8线→Mascot站' },
+
+{ city:'melb', day:'D5 · 10.4（周六）⚠️夏令时', title:'墨尔本机场 (MEL)', time:'08:00', pos:[-37.6690,144.8410], note:'🛬 SkyBus → Southern Cross（$24.90，30-40分钟）' },
+{ city:'melb', day:'D5 · 10.4（周六）⚠️夏令时', title:'Southern Cross Station', time:'08:40', pos:[-37.8183,144.9524], note:'🚌 SkyBus 下车点，步行10分钟到酒店' },
+{ city:'melb', day:'D5 · 10.4（周六）⚠️夏令时', title:'Oaks Melbourne on William Suites', time:'09:00', pos:[-37.8140,144.9555], note:'🏨 350 William St｜寄存行李，争取提前入住；09:30-12:00 补觉' },
+{ city:'melb', day:'D5 · 10.4（周六）⚠️夏令时', title:'Flagstaff Gardens', time:'—', pos:[-37.8120,144.9530], note:'酒店步行5分钟，补觉备选（长椅休息）' },
+{ city:'melb', day:'D5 · 10.4（周六）⚠️夏令时', title:'Queen Victoria Market', time:'12:00', pos:[-37.8076,144.9560], note:'🍽️ 午餐，步行8分钟，热食摊位' },
+{ city:'melb', day:'D5 · 10.4（周六）⚠️夏令时', title:'维多利亚州立图书馆', time:'13:00', pos:[-37.8095,144.9645], note:'📚 穹顶阅览室，免费' },
+{ city:'melb', day:'D5 · 10.4（周六）⚠️夏令时', title:'Hosier Lane 涂鸦街', time:'14:00', pos:[-37.8177,144.9690], note:'🎨 街头艺术巷，免费' },
+{ city:'melb', day:'D5 · 10.4（周六）⚠️夏令时', title:'联邦广场 + 福林德斯街火车站', time:'15:00', pos:[-37.8180,144.9690], note:'对面圣保罗大教堂' },
+{ city:'melb', day:'D5 · 10.4（周六）⚠️夏令时', title:'墨尔本大学', time:'15:30', pos:[-37.7963,144.9613], note:'🎓 Old Quadrangle 哈利波特风、钟楼；电车19/59路' },
+{ city:'melb', day:'D5 · 10.4（周六）⚠️夏令时', title:'Southbank 晚餐区', time:'18:30', pos:[-37.8200,144.9600], note:'Yarra河畔，夜景好；或 Lygon St 小意大利 / 唐人街' },
+
+{ city:'melb', day:'D7 · 10.6（周一）', title:'墨尔本机场 T2（退税！）', time:'17:30', pos:[-37.6690,144.8410], note:'✅ 值机 + ⚠️退税 + 免税店；21:50 ✈️ 飞台北' },
+
+{ city:'transit', day:'D8 · 10.7（周二）', color:'#757575', title:'台北桃园机场 (TPE)', time:'04:15', pos:[25.0777,121.2328], note:'🛬 转机购物 + 狂吃；后续 ✈️ 回上海' },
+];
+
+// ===== 初始化地图 =====
+const map = L.map('map').setView([-27,140], 4);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  attribution:'&copy; OpenStreetMap, &copy; CARTO', maxZoom:19
+}).addTo(map);
+
+const cityColors = { hcmc:'#e91e63', sydney:'#1565c0', melb:'#2e7d32' };
+const allMarkers = {};
+
+// ===== 侧栏 =====
+const dayList = document.getElementById('day-list');
+let lastDay = null;
+
+PLAN.forEach((p, i) => {
+  const isTransit = p.city === 'transit';
+  const color = p.color || cityColors[p.city];
+  // 数字序号标记
+  const numIcon = L.divIcon({
+    className:'',
+    html:`<div style="background:${color};color:#fff;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.4);border:2px solid #fff;">${i+1}</div>`,
+    iconSize:[26,26], iconAnchor:[13,13]
+  });
+  const m = L.marker(p.pos, { icon:numIcon }).addTo(map).bindPopup(
+    `<b>${p.time}｜${p.title}</b><br>${p.note}<br><span style="color:#888">${p.day}</span>`
+  );
+  (allMarkers[p.day] = allMarkers[p.day] || []).push(m);
+
+  if (p.day !== lastDay) {
+    lastDay = p.day;
+    const h = document.createElement('div');
+    h.className = 'day-title';
+    h.style.background = color;
+    h.textContent = p.day;
+    h.onclick = () => {
+      const g = allMarkers[p.day];
+      map.fitBounds(L.featureGroup(g).getBounds().pad(0.2));
+    };
+    dayList.appendChild(h);
+    const block = document.createElement('div');
+    block.className = 'day-block';
+    dayList.appendChild(block);
+  }
+  const item = document.createElement('div');
+  item.className = 'day-item';
+  item.innerHTML = `<span class="t">${p.time}</span> ${p.title}`;
+  item.onclick = () => { map.setView(p.pos, 16); m.openPopup(); };
+  dayList.lastChild.appendChild(item);
+});
+
+// ===== 城市折线（同一天的市内点连线）=====
+Object.entries(allMarkers).forEach(([day, ms]) => {
+  const city = PLAN.find(p=>p.day===day);
+  if (ms.length < 2 || !cityColors[city.city]) return;
+  const pts = ms.map(m => m.getLatLng());
+  L.polyline(pts, { color:cityColors[city.city], weight:2, opacity:.5, dashArray:'6,6' }).addTo(map);
+});
+
+// ===== 图例 =====
+const legend = document.getElementById('legend');
+legend.innerHTML = `<b>🗺️ 城市</b>` + Object.entries(CITY).filter(([k])=>k!=='transit').map(([k,v])=>
+  `<div class="row"><span class="dot" style="background:${v.color}"></span>${v.name}　<button onclick="map.setView([${v.zoom}],${v.zoomLevel})" style="font-size:11px;cursor:pointer;">前往</button></div>`
+).join('') + `<div class="row"><span class="dot" style="background:#757575"></span>中转点（重庆/台北）</div><div style="margin-top:6px;color:#888;">标记数字 = 全程顺序</div>`;
+map.on('click', ()=>{}); // no-op
+document.body.appendChild(legend);
+legend.style.position = 'absolute';
+legend.style.right = '12px';
+legend.style.top = '12px';
+legend.style.zIndex = '999';
+</script>
+</body>
+</html>
