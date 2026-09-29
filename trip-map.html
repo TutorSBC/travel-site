@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>越南-澳大利亚行程地图 9.30-10.7</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://registry.npmmirror.com/leaflet/1.9.4/files/dist/leaflet.css">
+<script src="https://registry.npmmirror.com/leaflet/1.9.4/files/dist/leaflet.js"></script>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; display:flex; height:100vh; }
@@ -98,48 +98,72 @@ const PLAN = [
 { city:'transit', day:'D8 · 10.7（周二）', color:'#757575', title:'台北桃园机场 (TPE)', time:'04:15', pos:[25.0777,121.2328], note:'🛬 转机购物 + 狂吃；后续 ✈️ 回上海' },
 ];
 
-// ===== 初始化地图 =====
+// ===== 初始化地图：?tiles=amap 使用高德瓦片（国内可访问，免key）；默认 OSM（需海外网络）=====
+const useAmap = new URLSearchParams(location.search).get('tiles') === 'amap';
 const map = L.map('map').setView([-27,140], 4);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-  attribution:'&copy; OpenStreetMap, &copy; CARTO', maxZoom:19
-}).addTo(map);
+if (useAmap) {
+  // Rough WGS-84 -> GCJ-02 offset correction (only matters for points inside mainland China)
+  const GCJ_OFFSET = { lat: 0.00250, lng: 0.00465 };
+  const inChina = p => p[0] > 20 && p[0] < 55 && p[1] > 73 && p[1] < 135;
+  PLAN.forEach(p => { if (inChina(p.pos)) p.pos = [p.pos[0] + GCJ_OFFSET.lat, p.pos[1] + GCJ_OFFSET.lng]; });
+  L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+    subdomains: ['1','2','3','4'], maxZoom: 18,
+    attribution: '&copy; 高德地图'
+  }).addTo(map);
+} else {
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    attribution:'&copy; OpenStreetMap, &copy; CARTO', maxZoom:19
+  }).addTo(map);
+}
 
 const cityColors = { hcmc:'#e91e63', sydney:'#1565c0', melb:'#2e7d32' };
+// 每天固定一种颜色（按天序分配）
+const DAY_COLORS = ['#e91e63','#1565c0','#2e7d32','#f57c00','#7b1fa2','#00838f','#5d4037','#455a64'];
 const allMarkers = {};
+const dayGroups = {}; // day -> { color, markers, points }
+let dayIndex = -1;
 
 // ===== 侧栏 =====
 const dayList = document.getElementById('day-list');
 let lastDay = null;
 
-PLAN.forEach((p, i) => {
-  const isTransit = p.city === 'transit';
-  const color = p.color || cityColors[p.city];
-  // 数字序号标记
-  const numIcon = L.divIcon({
-    className:'',
-    html:`<div style="background:${color};color:#fff;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.4);border:2px solid #fff;">${i+1}</div>`,
-    iconSize:[26,26], iconAnchor:[13,13]
-  });
-  const m = L.marker(p.pos, { icon:numIcon }).addTo(map).bindPopup(
-    `<b>${p.time}｜${p.title}</b><br>${p.note}<br><span style="color:#888">${p.day}</span>`
-  );
-  (allMarkers[p.day] = allMarkers[p.day] || []).push(m);
-
+PLAN.forEach(p => {
   if (p.day !== lastDay) {
-    lastDay = p.day;
+    // New day: create sidebar title + item block
+    lastDay = p.day; dayIndex++;
     const h = document.createElement('div');
     h.className = 'day-title';
-    h.style.background = color;
     h.textContent = p.day;
     h.onclick = () => {
-      const g = allMarkers[p.day];
-      map.fitBounds(L.featureGroup(g).getBounds().pad(0.2));
+      map.fitBounds(L.featureGroup(allMarkers[p.day]).getBounds().pad(0.2));
     };
     dayList.appendChild(h);
     const block = document.createElement('div');
     block.className = 'day-block';
     dayList.appendChild(block);
   }
+  const color = DAY_COLORS[dayIndex % DAY_COLORS.length];
+  if (!dayGroups[p.day]) dayGroups[p.day] = { color, markers: [], points: [] };
+  const g = dayGroups[p.day];
+
+  // Apply day color to the sidebar title of this day
+  const titleEl = dayList.querySelectorAll('.day-title')[dayIndex];
+  if (titleEl) titleEl.style.background = color;
+
+  // 序号 = 当天内的顺序（每天从 1 开始）
+  const seq = g.markers.length + 1;
+  const numIcon = L.divIcon({
+    className:'',
+    html:`<div style="background:${color};color:#fff;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.4);border:2px solid #fff;">${seq}</div>`,
+    iconSize:[26,26], iconAnchor:[13,13]
+  });
+  const m = L.marker(p.pos, { icon:numIcon }).addTo(map).bindPopup(
+    `<b>${p.time}｜${p.title}</b><br>${p.note}<br><span style="color:#888">${p.day}</span>`
+  );
+  g.markers.push(m);
+  g.points.push(p.pos);
+  (allMarkers[p.day] = allMarkers[p.day] || []).push(m);
+
   const item = document.createElement('div');
   item.className = 'day-item';
   item.innerHTML = `<span class="t">${p.time}</span> ${p.title}`;
@@ -147,19 +171,20 @@ PLAN.forEach((p, i) => {
   dayList.lastChild.appendChild(item);
 });
 
-// ===== 城市折线（同一天的市内点连线）=====
-Object.entries(allMarkers).forEach(([day, ms]) => {
-  const city = PLAN.find(p=>p.day===day);
-  if (ms.length < 2 || !cityColors[city.city]) return;
-  const pts = ms.map(m => m.getLatLng());
-  L.polyline(pts, { color:cityColors[city.city], weight:2, opacity:.5, dashArray:'6,6' }).addTo(map);
+// ===== 每天的行程折线（只连当天内的点，按当天顺序）=====
+Object.values(dayGroups).forEach(g => {
+  if (g.points.length < 2) return;
+  L.polyline(g.points, { color:g.color, weight:2, opacity:.5, dashArray:'6,6' }).addTo(map);
 });
 
-// ===== 图例 =====
+// ===== 图例（每天颜色 + 城市快捷跳转）=====
 const legend = document.getElementById('legend');
-legend.innerHTML = `<b>🗺️ 城市</b>` + Object.entries(CITY).filter(([k])=>k!=='transit').map(([k,v])=>
+legend.innerHTML = `<b>🗓️ 每日颜色</b>` + Object.entries(dayGroups).map(([day, g]) =>
+  `<div class="row"><span class="dot" style="background:${g.color}"></span>${day.split('（')[0]}</div>`
+).join('')
++ `<div style="margin-top:6px;border-top:1px solid #ddd;padding-top:6px;"><b>🗺️ 城市快捷</b>` + Object.entries(CITY).filter(([k])=>k!=='transit').map(([k,v])=>
   `<div class="row"><span class="dot" style="background:${v.color}"></span>${v.name}　<button onclick="map.setView([${v.zoom}],${v.zoomLevel})" style="font-size:11px;cursor:pointer;">前往</button></div>`
-).join('') + `<div class="row"><span class="dot" style="background:#757575"></span>中转点（重庆/台北）</div><div style="margin-top:6px;color:#888;">标记数字 = 全程顺序</div>`;
+).join('') + `</div><div style="margin-top:6px;color:#888;">标记数字 = 当天行程顺序</div>`;
 map.on('click', ()=>{}); // no-op
 document.body.appendChild(legend);
 legend.style.position = 'absolute';
